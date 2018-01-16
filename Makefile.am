@@ -294,6 +294,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/fluke-dmm/protocol.c \
 	src/hardware/fluke-dmm/api.c
 endif
+if HW_FREQUNECYCOUNTER
+src_libdrivers_la_SOURCES += \
+	src/hardware/frequnecycounter/protocol.h \
+	src/hardware/frequnecycounter/protocol.c \
+	src/hardware/frequnecycounter/api.c
+endif
 if HW_FTDI_LA
 src_libdrivers_la_SOURCES += \
 	src/hardware/ftdi-la/protocol.h \
