@@ -47,6 +47,15 @@
 //    packet.type = SR_DF_END;
 //    sr_session_send(sdi, &packet);
 //}
+void parse_serial (char *byte_buff, int byte_num)
+{
+    int i =0;
+    for(i=0;i<byte_num;i++)
+    {
+        sr_dbg("Received Data:0x%x",0l+byte_buff[i]);
+    }
+    printf("\n");
+}
 
 SR_PRIV int open_serial(const struct sr_dev_inst *sdi)
 {
@@ -57,8 +66,7 @@ SR_PRIV int open_serial(const struct sr_dev_inst *sdi)
     struct sr_serial_dev_inst *serial;
 	serial = sr_serial_dev_inst_new(conn, serialcomm);
 
-	if (serial_open(serial, SERIAL_RDWR) != SR_OK)
-		return SR_OK;
+	serial_open(serial, SERIAL_RDWR);
 
 	serial_flush(serial);
 
@@ -71,8 +79,7 @@ SR_PRIV int send_data(const struct sr_dev_inst *sdi)
     struct sr_serial_dev_inst *serial;
     serial = sr_serial_dev_inst_new(CONN, SERIALCOMM);
 
-	if (serial_open(serial, 1) != SR_OK)
-		return SR_ERR;
+	serial_open(serial, 1);
 
 	serial_flush(serial);
 
@@ -104,7 +111,7 @@ SR_PRIV int freqcount_receive_data(int fd, int revents, void *cb_data)
 	float floatdata = 12;
 	float multiplier = 1;
 	float float_buf = 0;
-	int i = 0;
+	uint32_t i = 0;
 	struct sr_datafeed_analog analog;
 	struct sr_analog_encoding encoding;
 	struct sr_analog_meaning meaning;
@@ -112,10 +119,11 @@ SR_PRIV int freqcount_receive_data(int fd, int revents, void *cb_data)
 	struct sr_datafeed_packet packet;
 	struct sr_dev_inst *sdi;
 
-	double double_buf = 0;
+	float double_buf = 0;
+	long double buff = 0;
 	uint8_t ByteRequest = 0;
-	uint32_t MeasCount = 0;
-	uint32_t RefCount = 0;
+	uint64_t MeasCount = 0;
+	uint64_t RefCount = 0;
 
 
 	(void)fd;
@@ -129,63 +137,84 @@ SR_PRIV int freqcount_receive_data(int fd, int revents, void *cb_data)
     devc = sdi->priv;
     serial = sr_serial_dev_inst_new(CONN, SERIALCOMM);
 
-	//sr_dbg("Sending request: %s", req);
+	sr_dbg("Sending request: ");
 
-	if (serial_open(serial, 1) != SR_OK)
-		return SR_ERR;
+	serial_open(serial, 1);
 
-    	serial_flush(serial);
+    serial_flush(serial);
 
 	buf = g_malloc(BUF_MAX);
 	printf("\nChecking data transfer to device...\n");
 
-	if(devc->limit_samples == 0)
-    {
-        devc->limit_samples = 65536;
-    }
+    //devc->limit_samples = 65536;
 
-    double samplerate = (1/(double)devc->cur_samplerate)*1000;
+    sr_dbg("Samples Set %d",devc->limit_samples);
 
-    g_usleep((request_delay*1000) + (request_delay*1000/4));
-    *send_buf |= 0x80;       //enable
+
+
+     sr_dbg("Samplerate Set %d",devc->cur_samplerate);
+
+    //g_usleep((request_delay*1000) + (request_delay*1000/4));
+    send_buf[0] |= 0x82;       //enable
+    sr_dbg("sendbuf: 0x%x",0l+send_buf[0]);
+    double samplerate = ((1/(double)devc->cur_samplerate)*1000);
+    //request_delay = 1000;
+    sr_dbg("Sendbuf Set");
+    uint32_t l = 0;
 
     for (i = 0; i < devc->limit_samples;)
     {
-            sp_blocking_write(serial->data,send_buf,sizeof(send_buf),1);
+        g_usleep((request_delay*1000) + (request_delay*1000/4));
+        sp_blocking_write(serial->data,send_buf,sizeof(send_buf),1);
+        //g_usleep(2000*1000);
+        sr_dbg("Send Start");
 
-        for(i = 0; i < 4;i++)
+        for(l = 0; l < 4;l++)
         {
             outBuffer[0] = ByteRequest;
             sp_nonblocking_write(serial->data,outBuffer,sizeof(outBuffer));
-            sp_blocking_read_next(serial->data,inBuffer,sizeof(inBuffer),50);
+            sp_blocking_read_next(serial->data,inBuffer,sizeof(inBuffer),100);
             parse_serial(inBuffer,sizeof(inBuffer));
-            MeasCount |= ((unsigned int)inBuffer[0])<<(24-(8*i));
+            MeasCount |= ((0xFF&((unsigned int)inBuffer[0]))<<(24-(8*l)));
             ByteRequest = ByteRequest+0x10;
+            sr_dbg("Reading MeasCount");
         }
 
-        for(i = 0; i < 4;i++)
+        for(l = 0; l < 4;l++)
         {
             outBuffer[0] = ByteRequest;
             sp_nonblocking_write(serial->data,outBuffer,sizeof(outBuffer));
-            sp_blocking_read_next(serial->data,inBuffer,sizeof(inBuffer),50);
+            sp_blocking_read_next(serial->data,inBuffer,sizeof(inBuffer),100);
             parse_serial(inBuffer,sizeof(inBuffer));
-            RefCount |= ((unsigned int)inBuffer[0])<<(24-(8*i));
+            RefCount |= ((0xFF&((unsigned int)inBuffer[0]))<<(24-(8*l)));
             ByteRequest = ByteRequest+0x10;
+            sr_dbg("Reading RefCount");
+            sr_dbg("RefCount:%x",RefCount);
         }
         ByteRequest = 0x00;
+//        RefCount = 1000;
+//        MeasCount = 999;
+
+        buff = (((9999999.9 / RefCount)*MeasCount));
+        double_buf = buff;
+        i++;
+        //printf("\n%5.2f",double_buf);
 
 
         analog.meaning->mq = SR_MQ_FREQUENCY;
         analog.meaning->unit = SR_UNIT_HERTZ;
         analog.meaning->channels = sdi->channels;
         analog.num_samples = 1;
-        analog.data = &buf;//float_buf;
+        analog.data = &double_buf;//float_buf;
         packet.type = SR_DF_ANALOG;
         packet.payload = &analog;
         sr_session_send(sdi, &packet);
         g_usleep(samplerate * 1000);
-        if(i == 65535)
+        if(devc->limit_samples == 65536)
+        {
             i = 0;
+        }
+        l = 0;
     }
 
     if (sr_sw_limits_check(&devc->limits))

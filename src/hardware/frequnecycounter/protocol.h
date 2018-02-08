@@ -33,13 +33,13 @@
 
 #define FREQCOUNT_TIMEOUT_MS 2000
 #define FREQCOUNT_BUFSIZE 256
-#define SERIALCOMM "9600/8n1/dtr=1/rts=0"
+#define SERIALCOMM "2400/8n1/dtr=0/rts=0"
 
 #define LOG_PREFIX "frequnecycounter"
 
 
 char *CONN[];
-char *send_buf;
+char send_buf[1];
 uint64_t request_delay;
 
 

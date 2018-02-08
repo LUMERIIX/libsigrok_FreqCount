@@ -31,13 +31,13 @@
 #include "protocol.h"
 
 #define BUF_MAX 8
-#define SERIALCOMM "2400/8n1/dtr=1/rts=0"
+//#define SERIALCOMM "2400/8n1/dtr=0/rts=0"
 //#define HAVE_LIBSERIAL
 
 
     static const uint32_t drvopts[] = {
         SR_CONF_LOGIC_ANALYZER,
-        //SR_CONF_OSCILLOSCOPE,
+        SR_CONF_OSCILLOSCOPE,
         SR_CONF_MULTIMETER,
     };
 
@@ -49,8 +49,10 @@
     static const uint32_t devopts[] = {
         SR_CONF_MULTIMETER,
         SR_CONF_CONTINUOUS,
-        SR_CONF_TIMEBASE | SR_CONF_SET |SR_CONF_GET| SR_CONF_LIST,
+        SR_CONF_LIMIT_MSEC | SR_CONF_SET | SR_CONF_LIST,
+        SR_CONF_TIMEBASE | SR_CONF_SET | SR_CONF_LIST,
         SR_CONF_DEVICE_MODE | SR_CONF_SET | SR_CONF_LIST,
+        SR_CONF_DATA_SOURCE | SR_CONF_SET | SR_CONF_LIST,
         SR_CONF_LIMIT_SAMPLES | SR_CONF_SET | SR_CONF_GET,
         SR_CONF_SAMPLERATE | SR_CONF_SET | SR_CONF_GET,
 
@@ -76,18 +78,22 @@
         SR_KHZ(1),
     };
 
+
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
     struct sr_dev_inst *sdi;
-	struct frequency_counter_context *devc;          //
+	struct frequency_counter_context *devc;
 	struct sr_config *src;
 	struct sr_serial_dev_inst *serial;
 	GSList *l, *devices;
 	int len, cnt;
 	const char *serialcomm, *conn;
 	char *buf;
-	char *req = "D0";//0x80;
-//	char test;
+	char *req = "D0";
+	char test;
+
+	struct sp_port *port;
+    struct sp_port **ports;
 
 	devices = NULL;
 	conn = serialcomm = NULL;
@@ -109,54 +115,56 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 		return NULL;
 
     serial = sr_serial_dev_inst_new(conn, SERIALCOMM);
-    strcpy(*CONN,conn);
+    strcpy(CONN,conn);
 
-	if (serial_open(serial, 1) != SR_OK)
-		return NULL;
-
+	serial_open(serial, 1);
+    //sp_list_ports(&ports);
+    //sp_get_port_by_name(serial->port,&serial->data);
+    //sp_open(port,SP_MODE_READ_WRITE);
+//
 	serial_flush(serial);
-
-	buf = g_malloc(BUF_MAX);
-
-	g_usleep(150 * 1000); /* Wait a little to allow serial port to settle. */
-	for (cnt = 0; cnt < 7; cnt++)
-    {
-        sr_dbg("Checking data transfer to device...");
-		if(serial_write_blocking(serial, req, strlen(req),
-            serial_timeout(serial, strlen(req))) < 0)
-        {
-			sr_err("Unable to send identification request.");
-			return NULL;
-		}
-		len = BUF_MAX;
-
-		serial_readline(serial, &buf, &len, FREQCOUNT_TIMEOUT_MS);
-		if (!len)
-			continue;
-		//buf[BUF_MAX - 1] = '\0';
+//
+//	buf = g_malloc(BUF_MAX);
+//
+	//g_usleep(150 * 1000); /* Wait a little to allow serial port to settle. */
+//	for (cnt = 0; cnt < 7; cnt++)
+//    {
+//        sr_dbg("Checking data transfer to device...");
+//		if(serial_write_blocking(serial, req, strlen(req),
+//            serial_timeout(serial, strlen(req))) < 0)
+//        {
+//			sr_err("Unable to send identification request.");
+//			return NULL;
+//		}
+//		len = BUF_MAX;
+//
+//		serial_readline(serial, &buf, &len, BK1856D_TIMEOUT_MS);
+//		if (!len)
+//			continue;
+//		buf[BUF_MAX - 1] = '\0';
 
         sdi = g_malloc0(sizeof(struct sr_dev_inst));
         sdi->status = SR_ST_INACTIVE;
-        sdi->vendor = g_strdup("frequencycounter");
+        sdi->vendor = g_strdup("COMLAB");
         sdi->model = g_strdup("ONE");
-        sdi->version = g_strdup(buf + 9);                                   //
-        devc = g_malloc0(sizeof(struct frequency_counter_context));          //
+        sdi->version = g_strdup("1.0.0");
+        devc = g_malloc0(sizeof(struct frequency_counter_context));
         sr_sw_limits_init(&devc->limits);
         sdi->conn = serial;
         sdi->priv = devc;
         sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "P1");
         devices = g_slist_append(devices, sdi);
-        break;
-    }
+        //break;
+    //}
 
-
-	serial_close(serial);
-
+//	serial_close(serial);
+    //sp_close(port);
     if (!(devices))
 		sr_serial_dev_inst_free(serial);
 
 	return std_scan_complete(di, devices);
 }
+
 
 
 static int dev_clear(const struct sr_dev_driver *di)
@@ -234,10 +242,12 @@ static int config_set(uint32_t key, GVariant *data, const struct sr_dev_inst *sd
 {
     int ret, cg_type;
 	unsigned int i;
-    uint16_t ChannelSelect;
+    char* ChannelSelect;
+    char* RefChannelSelect;
 	struct frequency_counter_context *devc;      //
 	struct scope_state *state;
 	uint64_t p, q;
+    uint64_t TimebaseSel;
 	gboolean update_sample_rate;
     char gatetime[30];
 	ret = SR_ERR_NA;
@@ -257,41 +267,76 @@ switch (key) {
 					"%E", (float) p / q);
 			update_sample_rate = TRUE;
 			if(strcmp(gatetime,"1.000000E+01")==0) {
-                *send_buf |= 0x0C;
+                send_buf[0] |= 0x0C;
                 request_delay = 10000;}
             else if(strcmp(gatetime,"1.000000E+00")==0) {
-                *send_buf |= 0x08;
+                send_buf[0] |= 0x08;
                 request_delay = 1000; }
             else if(strcmp(gatetime,"1.000000E-01")==0) {
-                *send_buf |= 0x04;
+                send_buf[0] |= 0x04;
                 request_delay = 100;}
             else if(strcmp(gatetime,"1.000000E-02")==0) {
-                *send_buf |= 0x00;
+                send_buf[0] |= 0x00;
                 request_delay = 10; }
 
 		}
 		break;
+    case SR_CONF_LIMIT_MSEC:
+        TimebaseSel = g_variant_get_uint64(data);
+        if(TimebaseSel == 5){
+            send_buf[0] = ((send_buf[0] & 0xF3)|0x0C);
+            request_delay = 10000;}
+        else if (TimebaseSel == 4){
+            send_buf[0] = ((send_buf[0] & 0xF3)|0x08);
+            request_delay = 1000;}
+        else if (TimebaseSel == 3){
+            send_buf[0] = ((send_buf[0] & 0xF3)|0x04);
+            request_delay = 100;}
+        else {
+            send_buf[0] = ((send_buf[0] & 0xF3));
+            request_delay = 10;}
 
+        break;
     case SR_CONF_CONTINUOUS:
         break;
 
     case SR_CONF_DEVICE_MODE:
-        ChannelSelect = g_variant_get_uint16(data);
+        RefChannelSelect = g_variant_get_string(data, NULL);
+        if(strcmp(RefChannelSelect,"Int.Ref")==0) {
+            send_buf[0] = ((send_buf[0] & 0xFE)|0x00);
+        }
+        else if(strcmp(RefChannelSelect,"Ext.Ref")==0) {
+            send_buf[0] = ((send_buf[0] & 0xFE)|0x01);
+        }
         sr_dbg("Channel Select:%d",ChannelSelect);
-        send_buf = ChannelSelect;
+        //send_buf[0] |= ChannelSelect;
+        break;
 
+    case SR_CONF_DATA_SOURCE:
+        ChannelSelect = g_variant_get_string(data, NULL);
+        if(strcmp(ChannelSelect,"CHA")==0) {
+            send_buf[0] = ((send_buf[0] & 0xFD)|0x00);
+        }
+        else if(strcmp(ChannelSelect,"CHB")==0) {
+            send_buf[0] = ((send_buf[0] & 0xFD)|0x02);
+        }
+        sr_dbg("Channel Select:%d",ChannelSelect);
+        //send_buf[0] |= ChannelSelect;
+        break;
 
     case SR_CONF_LIMIT_SAMPLES:
 		devc->limit_msec = 0;
+		sr_dbg("Select SAMPLES");
 		devc->limit_samples = g_variant_get_uint64(data);
 		break;
 
         case SR_CONF_SAMPLERATE:
+            sr_dbg("Select SAMPLERATE");
 		devc->cur_samplerate = g_variant_get_uint64(data);
 		break;
 
     default:
-		send_buf = send_buf;
+		send_buf[0] = send_buf[0];
 		break;
         }
 
@@ -373,6 +418,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
     struct frequency_counter_context *devc;
 	struct sr_serial_dev_inst *serial;
+	sr_dbg("ACQUISATION");
 
 	if (sdi->status != SR_ST_ACTIVE)
 		return SR_ERR_DEV_CLOSED;
