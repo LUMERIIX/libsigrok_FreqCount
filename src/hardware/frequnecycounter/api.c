@@ -25,19 +25,11 @@
 #include "protocol.h"
 #include "protocol_wrappers.h"
 #include <glib.h>
-#include <config.h>
-#include "protocol.h"
-#include <config.h>
-#include "protocol.h"
 
 #define BUF_MAX 8
-//#define SERIALCOMM "2400/8n1/dtr=0/rts=0"
-//#define HAVE_LIBSERIAL
 
 
     static const uint32_t drvopts[] = {
-        SR_CONF_LOGIC_ANALYZER,
-        SR_CONF_OSCILLOSCOPE,
         SR_CONF_MULTIMETER,
     };
 
@@ -86,14 +78,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	struct sr_config *src;
 	struct sr_serial_dev_inst *serial;
 	GSList *l, *devices;
-	int len, cnt;
 	const char *serialcomm, *conn;
-	char *buf;
-	char *req = "D0";
-	char test;
-
-	struct sp_port *port;
-    struct sp_port **ports;
 
 	devices = NULL;
 	conn = serialcomm = NULL;
@@ -118,54 +103,26 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
     strcpy(CONN,conn);
 
 	serial_open(serial, 1);
-    //sp_list_ports(&ports);
-    //sp_get_port_by_name(serial->port,&serial->data);
-    //sp_open(port,SP_MODE_READ_WRITE);
-//
+
 	serial_flush(serial);
-//
-//	buf = g_malloc(BUF_MAX);
-//
-	//g_usleep(150 * 1000); /* Wait a little to allow serial port to settle. */
-//	for (cnt = 0; cnt < 7; cnt++)
-//    {
-//        sr_dbg("Checking data transfer to device...");
-//		if(serial_write_blocking(serial, req, strlen(req),
-//            serial_timeout(serial, strlen(req))) < 0)
-//        {
-//			sr_err("Unable to send identification request.");
-//			return NULL;
-//		}
-//		len = BUF_MAX;
-//
-//		serial_readline(serial, &buf, &len, BK1856D_TIMEOUT_MS);
-//		if (!len)
-//			continue;
-//		buf[BUF_MAX - 1] = '\0';
 
-        sdi = g_malloc0(sizeof(struct sr_dev_inst));
-        sdi->status = SR_ST_INACTIVE;
-        sdi->vendor = g_strdup("COMLAB");
-        sdi->model = g_strdup("ONE");
-        sdi->version = g_strdup("1.0.0");
-        devc = g_malloc0(sizeof(struct frequency_counter_context));
-        sr_sw_limits_init(&devc->limits);
-        sdi->conn = serial;
-        sdi->priv = devc;
-        sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "P1");
-        devices = g_slist_append(devices, sdi);
-        //break;
-    //}
+    sdi = g_malloc0(sizeof(struct sr_dev_inst));
+    sdi->status = SR_ST_INACTIVE;
+    sdi->vendor = g_strdup("COMLAB");
+    sdi->model = g_strdup("ONE");
+    sdi->version = g_strdup("1.0.0");
+    devc = g_malloc0(sizeof(struct frequency_counter_context));
+    sr_sw_limits_init(&devc->limits);
+    sdi->conn = serial;
+    sdi->priv = devc;
+    sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "P1");
+    devices = g_slist_append(devices, sdi);
 
-//	serial_close(serial);
-    //sp_close(port);
     if (!(devices))
 		sr_serial_dev_inst_free(serial);
 
 	return std_scan_complete(di, devices);
 }
-
-
 
 static int dev_clear(const struct sr_dev_driver *di)
 {
@@ -176,10 +133,9 @@ static int dev_clear(const struct sr_dev_driver *di)
 static int config_get(uint32_t key, GVariant **data, const struct sr_dev_inst *sdi,
 		const struct sr_channel_group *cg)
 {
-
     int ret;//, cg_type;
 	//unsigned int i;
-	struct frequency_counter_context *devc;          //
+	struct frequency_counter_context *devc;
 	const struct scope_config *model;
 	struct scope_state *state;
 
@@ -352,7 +308,7 @@ static int config_list(uint32_t key, GVariant **data, const struct sr_dev_inst *
     GVariant *gvar;
 	GVariantBuilder gvb;
 
-    struct frequency_counter_context *devc = NULL;           //
+    struct frequency_counter_context *devc = NULL;
 	const struct scope_config *model = NULL;
 
 	if (key == SR_CONF_SCAN_OPTIONS)
