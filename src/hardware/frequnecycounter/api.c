@@ -207,13 +207,14 @@ static int config_set(uint32_t key, GVariant *data, const struct sr_dev_inst *sd
 	gboolean update_sample_rate;
     char gatetime[30];
 	ret = SR_ERR_NA;
+	//send_buf[0] = 0x00;
 
 	devc = sdi->priv;
 
 switch (key) {
 	case SR_CONF_TIMEBASE:
 		g_variant_get(data, "(tt)", &p, &q);
-		*send_buf = 0x00;
+        *send_buf = 0x00;
 
 		for (i = 0; i < ARRAY_SIZE(timebases); i++) {
 			if (p != timebases[i][0] ||

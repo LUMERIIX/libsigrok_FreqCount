@@ -39,7 +39,7 @@
 
 
 char *CONN[];
-char send_buf[1];
+static char send_buf[1];
 uint64_t request_delay;
 
 

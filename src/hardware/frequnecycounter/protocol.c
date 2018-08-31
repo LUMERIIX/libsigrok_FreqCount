@@ -121,13 +121,14 @@ SR_PRIV int freqcount_receive_data(int fd, int revents, void *cb_data)
 
     serial_flush(serial);
 
-    send_buf[0] |= 0x80;       //enable
+    sr_dbg("sendbuf: 0x%x",0l+send_buf[0]);
+    send_buf[0] |= 0x80;       //enable 8A
     sr_dbg("sendbuf: 0x%x",0l+send_buf[0]);
     uint32_t l = 0;
 
     for (i = 0; i < devc->limit_samples;)
     {
-        g_usleep((request_delay*1000) + (request_delay*1000/4));
+        //g_usleep((request_delay*1000) + (request_delay*1000/4));
         sp_blocking_write(serial->data,send_buf,sizeof(send_buf),1);
         //g_usleep(2000*1000);
         sr_dbg("Send Start");
@@ -157,6 +158,8 @@ SR_PRIV int freqcount_receive_data(int fd, int revents, void *cb_data)
         ByteRequest = 0x00;
 
         double_buf = (((9999999.9 / RefCount)*MeasCount));
+        if((send_buf[0]&0x02) == 0x00 ){
+            double_buf = double_buf * 8;}
         i++;
 
 
