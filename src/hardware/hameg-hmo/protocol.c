@@ -664,6 +664,7 @@ SR_PRIV int hmo_init_device(struct sr_dev_inst *sdi)
 	unsigned int i, j, group;
 	struct sr_channel *ch;
 	struct dev_context *devc;
+	int ret;
 
 	devc = sdi->priv;
 	model_index = -1;
@@ -687,9 +688,13 @@ SR_PRIV int hmo_init_device(struct sr_dev_inst *sdi)
 
 	devc->analog_groups = g_malloc0(sizeof(struct sr_channel_group*) *
 					scope_models[model_index].analog_channels);
-
 	devc->digital_groups = g_malloc0(sizeof(struct sr_channel_group*) *
 					 scope_models[model_index].digital_pods);
+	if (!devc->analog_groups || !devc->digital_groups) {
+		g_free(devc->analog_groups);
+		g_free(devc->digital_groups);
+		return SR_ERR_MALLOC;
+	}
 
 	/* Add analog channels. */
 	for (i = 0; i < scope_models[model_index].analog_channels; i++) {
@@ -707,12 +712,19 @@ SR_PRIV int hmo_init_device(struct sr_dev_inst *sdi)
 	}
 
 	/* Add digital channel groups. */
+	ret = SR_OK;
 	for (i = 0; i < scope_models[model_index].digital_pods; i++) {
 		devc->digital_groups[i] = g_malloc0(sizeof(struct sr_channel_group));
+		if (!devc->digital_groups[i]) {
+			ret = SR_ERR_MALLOC;
+			break;
+		}
 		devc->digital_groups[i]->name = g_strdup_printf("POD%d", i);
 		sdi->channel_groups = g_slist_append(sdi->channel_groups,
 				   devc->digital_groups[i]);
 	}
+	if (ret != SR_OK)
+		return ret;
 
 	/* Add digital channels. */
 	for (i = 0; i < scope_models[model_index].digital_channels; i++) {

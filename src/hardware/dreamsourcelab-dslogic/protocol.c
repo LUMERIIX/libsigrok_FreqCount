@@ -568,7 +568,9 @@ SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di)
 		if ((sdi->status == SR_ST_INITIALIZING) ||
 				(sdi->status == SR_ST_INACTIVE)) {
 			/* Check device by its physical USB bus/port address. */
-			usb_get_port_path(devlist[i], connection_id, sizeof(connection_id));
+			if (usb_get_port_path(devlist[i], connection_id, sizeof(connection_id)) < 0)
+				continue;
+
 			if (strcmp(sdi->connection_id, connection_id))
 				/* This is not the one. */
 				continue;
@@ -738,7 +740,7 @@ static void deinterleave_buffer(const uint8_t *src, size_t length,
 				const uint16_t m = channel_mask >> channel;
 				if (!m)
 					break;
-				if ((m & 1) && ((*word_ptr++ >> bit) & 1ULL))
+				if ((m & 1) && ((*word_ptr++ >> bit) & UINT64_C(1)))
 					sample |= 1 << channel;
 			}
 			*dst_ptr++ = sample;
@@ -914,6 +916,8 @@ static size_t get_buffer_size(const struct sr_dev_inst *sdi)
 	 */
 	const size_t block_size = enabled_channel_count(sdi) * 512;
 	const size_t s = 10 * to_bytes_per_ms(sdi);
+	if (!block_size)
+		return s;
 	return ((s + block_size - 1) / block_size) * block_size;
 }
 
@@ -1016,8 +1020,8 @@ static void LIBUSB_CALL trigger_receive(struct libusb_transfer *transfer)
 	} else if (transfer->status == LIBUSB_TRANSFER_COMPLETED
 			&& transfer->actual_length == sizeof(struct dslogic_trigger_pos)) {
 		tpos = (struct dslogic_trigger_pos *)transfer->buffer;
-		sr_info("tpos real_pos %d ram_saddr %d cnt %d", tpos->real_pos,
-			tpos->ram_saddr, tpos->remain_cnt);
+		sr_info("tpos real_pos %d ram_saddr %d cnt_h %d cnt_l %d", tpos->real_pos,
+			tpos->ram_saddr, tpos->remain_cnt_h, tpos->remain_cnt_l);
 		devc->trigger_pos = tpos->real_pos;
 		g_free(tpos);
 		start_transfers(sdi);

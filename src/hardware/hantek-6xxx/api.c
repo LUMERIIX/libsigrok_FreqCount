@@ -120,10 +120,6 @@ static struct sr_dev_inst *hantek_6xxx_dev_new(const struct hantek_6xxx_profile 
 	devc->coupling_tab_size = prof->coupling_tab_size;
 	devc->has_coupling = prof->has_coupling;
 
-	devc->sample_buf = NULL;
-	devc->sample_buf_write = 0;
-	devc->sample_buf_size = 0;
-
 	devc->profile = prof;
 	devc->dev_state = IDLE;
 	devc->samplerate = DEFAULT_SAMPLERATE;
@@ -217,7 +213,8 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 
 		libusb_get_device_descriptor(devlist[i], &des);
 
-		usb_get_port_path(devlist[i], connection_id, sizeof(connection_id));
+		if (usb_get_port_path(devlist[i], connection_id, sizeof(connection_id)) < 0)
+			continue;
 
 		prof = NULL;
 		for (j = 0; dev_profiles[j].orig_vid; j++) {
@@ -231,11 +228,12 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 				devices = g_slist_append(devices, sdi);
 				devc = sdi->priv;
 				if (ezusb_upload_firmware(drvc->sr_ctx, devlist[i],
-						USB_CONFIGURATION, prof->firmware) == SR_OK)
+						USB_CONFIGURATION, prof->firmware) == SR_OK) {
 					/* Remember when the firmware on this device was updated. */
 					devc->fw_updated = g_get_monotonic_time();
-				else
-					sr_err("Firmware upload failed.");
+				} else {
+					sr_err("Firmware upload failed, name %s.", prof->firmware);
+				}
 				/* Dummy USB address of 0xff will get overwritten later. */
 				sdi->conn = sr_usb_dev_inst_new(
 						libusb_get_bus_number(devlist[i]), 0xff, NULL);
@@ -460,6 +458,8 @@ static int config_list(uint32_t key, GVariant **data,
 			*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg));
 			break;
 		case SR_CONF_COUPLING:
+			if (!devc)
+				return SR_ERR_ARG;
 			*data = g_variant_new_strv(devc->coupling_vals, devc->coupling_tab_size);
 			break;
 		case SR_CONF_VDIV:
@@ -563,27 +563,6 @@ static void send_chunk(struct sr_dev_inst *sdi, unsigned char *buf,
 	g_free(analog.data);
 }
 
-static void send_data(struct sr_dev_inst *sdi, struct libusb_transfer *buf[], uint64_t samples)
-{
-	int i = 0;
-	uint64_t send = 0;
-	uint32_t chunk;
-
-	while (send < samples) {
-		chunk = MIN(samples - send, (uint64_t)(buf[i]->actual_length / NUM_CHANNELS));
-		send += chunk;
-		send_chunk(sdi, buf[i]->buffer, chunk);
-
-		/*
-		 * Everything in this transfer was either copied to the buffer
-		 * or sent to the session bus.
-		 */
-		g_free(buf[i]->buffer);
-		libusb_free_transfer(buf[i]);
-		i++;
-	}
-}
-
 /*
  * Called by libusb (as triggered by handle_event()) when a transfer comes in.
  * Only channel data comes in asynchronously, and all transfers for this are
@@ -610,26 +589,6 @@ static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
 	if (devc->dev_state != CAPTURE)
 		return;
 
-	if (!devc->sample_buf) {
-		devc->sample_buf_size = 10;
-		devc->sample_buf = g_try_malloc(devc->sample_buf_size * sizeof(transfer));
-		devc->sample_buf_write = 0;
-	}
-
-	if (devc->sample_buf_write >= devc->sample_buf_size) {
-		devc->sample_buf_size += 10;
-		devc->sample_buf = g_try_realloc(devc->sample_buf,
-				devc->sample_buf_size * sizeof(transfer));
-		if (!devc->sample_buf) {
-			sr_err("Sample buffer malloc failed.");
-			devc->dev_state = STOPPING;
-			return;
-		}
-	}
-
-	devc->sample_buf[devc->sample_buf_write++] = transfer;
-	devc->samp_received += transfer->actual_length / NUM_CHANNELS;
-
 	sr_spew("receive_transfer(): calculated samplerate == %" PRIu64 "ks/s",
 		(uint64_t)(transfer->actual_length * 1000 /
 		(g_get_monotonic_time() - devc->read_start_ts + 1) /
@@ -642,20 +601,23 @@ static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
 		/* Nothing to send to the bus. */
 		return;
 
+	unsigned samples_received = transfer->actual_length / NUM_CHANNELS;
+	send_chunk(sdi, transfer->buffer, samples_received);
+	devc->samp_received += samples_received;
+
+	g_free(transfer->buffer);
+	libusb_free_transfer(transfer);
+
 	if (devc->limit_samples && devc->samp_received >= devc->limit_samples) {
 		sr_info("Requested number of samples reached, stopping. %"
 			PRIu64 " <= %" PRIu64, devc->limit_samples,
 			devc->samp_received);
-		send_data(sdi, devc->sample_buf, devc->limit_samples);
 		sr_dev_acquisition_stop(sdi);
 	} else if (devc->limit_msec && (g_get_monotonic_time() -
 			devc->aq_started) / 1000 >= devc->limit_msec) {
 		sr_info("Requested time limit reached, stopping. %d <= %d",
 			(uint32_t)devc->limit_msec,
 			(uint32_t)(g_get_monotonic_time() - devc->aq_started) / 1000);
-		send_data(sdi, devc->sample_buf, devc->samp_received);
-		g_free(devc->sample_buf);
-		devc->sample_buf = NULL;
 		sr_dev_acquisition_stop(sdi);
 	} else {
 		read_channel(sdi, data_amount(sdi));
@@ -672,7 +634,6 @@ static int read_channel(const struct sr_dev_inst *sdi, uint32_t amount)
 	amount = MIN(amount, MAX_PACKET_SIZE);
 	ret = hantek_6xxx_get_channeldata(sdi, receive_transfer, amount);
 	devc->read_start_ts = g_get_monotonic_time();
-	devc->read_data_amount = amount;
 
 	return ret;
 }
@@ -755,9 +716,6 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 
 	devc = sdi->priv;
 	devc->dev_state = STOPPING;
-
-	g_free(devc->sample_buf);
-	devc->sample_buf = NULL;
 
 	return SR_OK;
 }

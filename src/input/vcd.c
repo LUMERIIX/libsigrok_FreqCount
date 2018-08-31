@@ -67,7 +67,7 @@
 
 #define LOG_PREFIX "input/vcd"
 
-#define CHUNKSIZE (1024 * 1024)
+#define CHUNK_SIZE (4 * 1024 * 1024)
 
 struct context {
 	gboolean started;
@@ -265,7 +265,7 @@ static gboolean parse_header(const struct sr_input *in, GString *buf)
 	return status;
 }
 
-static int format_match(GHashTable *metadata)
+static int format_match(GHashTable *metadata, unsigned int *confidence)
 {
 	GString *buf, *tmpbuf;
 	gboolean status;
@@ -283,7 +283,11 @@ static int format_match(GHashTable *metadata)
 	g_free(name);
 	g_free(contents);
 
-	return status ? SR_OK : SR_ERR;
+	if (!status)
+		return SR_ERR;
+	*confidence = 1;
+
+	return SR_OK;
 }
 
 /* Send all accumulated bytes from inc->buffer. */
@@ -319,7 +323,7 @@ static void add_samples(const struct sr_input *in, size_t count)
 	uint8_t *p;
 
 	inc = in->priv;
-	samples_per_chunk = CHUNKSIZE / inc->bytes_per_sample;
+	samples_per_chunk = CHUNK_SIZE / inc->bytes_per_sample;
 
 	while (count) {
 		space_left = samples_per_chunk - inc->samples_in_buffer;
@@ -404,6 +408,10 @@ static void parse_contents(const struct sr_input *in, char *data)
 				inc->prev_timestamp = inc->skip;
 			} else if (timestamp == inc->prev_timestamp) {
 				/* Ignore repeated timestamps (e.g. sigrok outputs these) */
+			} else if (timestamp < inc->prev_timestamp) {
+				sr_err("Invalid timestamp: %" PRIu64 " (smaller than previous timestamp).", timestamp);
+				inc->skip_until_end = TRUE;
+				break;
 			} else {
 				if (inc->compress != 0 && timestamp - inc->prev_timestamp > inc->compress) {
 					/* Compress long idle periods */
@@ -498,7 +506,7 @@ static int init(struct sr_input *in, GHashTable *options)
 	in->sdi = g_malloc0(sizeof(struct sr_dev_inst));
 	in->priv = inc;
 
-	inc->buffer = g_malloc(CHUNKSIZE);
+	inc->buffer = g_malloc(CHUNK_SIZE);
 
 	return SR_OK;
 }
@@ -625,10 +633,11 @@ static int reset(struct sr_input *in)
 }
 
 static struct sr_option options[] = {
-	{ "numchannels", "Number of channels", "Number of channels", NULL, NULL },
-	{ "skip", "Skip", "Skip until timestamp", NULL, NULL },
-	{ "downsample", "Downsample", "Divide samplerate by factor", NULL, NULL },
-	{ "compress", "Compress", "Compress idle periods longer than this value", NULL, NULL },
+	{ "numchannels", "Number of logic channels", "The number of (logic) channels in the data", NULL, NULL },
+	{ "skip", "Skip samples until timestamp", "Skip samples until the specified timestamp; "
+		"< 0: Skip until first timestamp listed; 0: Don't skip", NULL, NULL },
+	{ "downsample", "Downsampling factor", "Downsample, i.e. divide the samplerate by the specified factor", NULL, NULL },
+	{ "compress", "Compress idle periods", "Compress idle periods longer than the specified value", NULL, NULL },
 	ALL_ZERO
 };
 
@@ -647,7 +656,7 @@ static const struct sr_option *get_options(void)
 SR_PRIV struct sr_input_module input_vcd = {
 	.id = "vcd",
 	.name = "VCD",
-	.desc = "Value Change Dump",
+	.desc = "Value Change Dump data",
 	.exts = (const char*[]){"vcd", NULL},
 	.metadata = { SR_INPUT_META_HEADER | SR_INPUT_META_REQUIRED },
 	.options = get_options,

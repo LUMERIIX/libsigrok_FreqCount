@@ -25,9 +25,13 @@
  * @internal
  */
 
+/* Needed for gettimeofday(), at least on FreeBSD. */
+#define _XOPEN_SOURCE 700
+
 #include <config.h>
 #include <string.h>
 #include <math.h>
+#include <sys/time.h>
 #include <glib.h>
 #include <libsigrok/libsigrok.h>
 #include "libsigrok-internal.h"
@@ -745,22 +749,39 @@ SR_PRIV GVariant *std_gvar_tuple_double(double low, double high)
 	return g_variant_new_tuple(range, 2);
 }
 
-SR_PRIV GVariant *std_gvar_array_i32(const int32_t *a, unsigned int n)
+SR_PRIV GVariant *std_gvar_array_i32(const int32_t a[], unsigned int n)
 {
 	return g_variant_new_fixed_array(G_VARIANT_TYPE_INT32,
 				a, n, sizeof(int32_t));
 }
 
-SR_PRIV GVariant *std_gvar_array_u32(const uint32_t *a, unsigned int n)
+SR_PRIV GVariant *std_gvar_array_u32(const uint32_t a[], unsigned int n)
 {
 	return g_variant_new_fixed_array(G_VARIANT_TYPE_UINT32,
 				a, n, sizeof(uint32_t));
 }
 
-SR_PRIV GVariant *std_gvar_array_u64(const uint64_t *a, unsigned int n)
+SR_PRIV GVariant *std_gvar_array_u64(const uint64_t a[], unsigned int n)
 {
 	return g_variant_new_fixed_array(G_VARIANT_TYPE_UINT64,
 				a, n, sizeof(uint64_t));
+}
+
+SR_PRIV GVariant *std_gvar_array_str(const char *a[], unsigned int n)
+{
+	GVariant *gvar;
+	GVariantBuilder *builder;
+	unsigned int i;
+
+	builder = g_variant_builder_new(G_VARIANT_TYPE ("as"));
+
+	for (i = 0; i < n; i++)
+		g_variant_builder_add(builder, "s", a[i]);
+
+	gvar = g_variant_new("as", builder);
+	g_variant_builder_unref(builder);
+
+	return gvar;
 }
 
 SR_PRIV GVariant *std_gvar_thresholds(const double a[][2], unsigned int n)

@@ -1,3 +1,5 @@
+#include <config.h>
+
 const DataType *ConfigKey::data_type() const
 {
 	const struct sr_key_info *info = sr_key_info_get(SR_KEY_CONFIG, id());
@@ -29,8 +31,6 @@ const ConfigKey *ConfigKey::get_by_identifier(string identifier)
 		throw Error(SR_ERR_ARG);
 	return get(info->key);
 }
-
-#include <config.h>
 
 #ifndef HAVE_STOI_STOD
 
@@ -90,7 +90,7 @@ Glib::VariantBase ConfigKey::parse_string(string value, enum sr_datatype dt)
 		case SR_T_FLOAT:
 			try {
 				variant = g_variant_new_double(stod(value));
-			} catch (invalid_argument) {
+			} catch (invalid_argument&) {
 				throw Error(SR_ERR_ARG);
 			}
 			break;
@@ -105,7 +105,7 @@ Glib::VariantBase ConfigKey::parse_string(string value, enum sr_datatype dt)
 		case SR_T_INT32:
 			try {
 				variant = g_variant_new_int32(stoi(value));
-			} catch (invalid_argument) {
+			} catch (invalid_argument&) {
 				throw Error(SR_ERR_ARG);
 			}
 			break;

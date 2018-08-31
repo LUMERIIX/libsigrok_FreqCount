@@ -115,6 +115,7 @@ The following drivers/devices do not need any firmware upload:
  - scpi-pps
  - serial-dmm (including all subdrivers)
  - serial-lcr (including all subdrivers)
+ - siglent-sds
  - teleinfo
  - testo
  - tondaj-sl-814
@@ -139,7 +140,8 @@ Example:
 
  $ sigrok-cli --driver <somedriver>:conn=/dev/ttyUSB0 ...
 
-The following drivers/devices require a serial port specification:
+The following drivers/devices require a serial port specification. Some of
+the drivers implement a default for the connection.
 
  - agilent-dmm
  - appa-55ii
@@ -183,6 +185,21 @@ The following drivers/devices do not require a serial port specification:
  - victor-dmm
  - yokogawa-dlm (USBTMC or TCP)
  - zeroplus-logic-cube
+
+Beyond strict serial communication over COM ports (e.g. /dev/ttyUSB0), the
+conn= property can also address specific USB devices, as well as specify TCP
+or VXI communication parameters. See these examples:
+
+ $ sigrok-cli --driver <somedriver>:conn=<vid>.<pid> ...
+ $ sigrok-cli --driver <somedriver>:conn=tcp-raw/<ipaddr>/<port> ...
+ $ sigrok-cli --driver <somedriver>:conn=vxi/<ipaddr> ...
+
+The following drivers/devices accept network communication parameters:
+
+ - hameg-hmo
+ - rigol-ds
+ - siglent-sds
+ - yokogawa-dlm
 
 
 Specifying serial port parameters
@@ -356,6 +373,9 @@ a short list for convenience:
       'SI232 online' (28-29S) or 'SI232 store' (22-26x). The interface must
       be configured to the same baud rate as the host (default 9600).
       Multimeter and interface must be configured to the same address.
+ - Metrix MX56C: Press the PRINT button to have the meter send acquisition
+   data via IR. Hold the PRINT button to adjust the meter's transmission
+   interval.
  - Norma DM950: If the interface doesn't work (e.g. USB-RS232 converter), power
    on the device with "FUNC" pressed (to power the interface from the DMM).
  - PCE PCE-DM32: Briefly press the "RS232" button.

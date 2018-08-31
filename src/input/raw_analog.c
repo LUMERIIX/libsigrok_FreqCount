@@ -31,7 +31,7 @@
 #define LOG_PREFIX "input/raw_analog"
 
 /* How many bytes at a time to process and send to the session bus. */
-#define CHUNK_SIZE		4096
+#define CHUNK_SIZE		(4 * 1024 * 1024)
 #define DEFAULT_NUM_CHANNELS	1
 #define DEFAULT_SAMPLERATE	0
 
@@ -233,9 +233,9 @@ static int end(struct sr_input *in)
 }
 
 static struct sr_option options[] = {
-	{ "numchannels", "Number of channels", "Number of channels", NULL, NULL },
-	{ "samplerate", "Sample rate", "Sample rate", NULL, NULL },
-	{ "format", "Format", "Numeric format", NULL, NULL },
+	{ "numchannels", "Number of analog channels", "The number of (analog) channels in the data", NULL, NULL },
+	{ "samplerate", "Sample rate (Hz)", "The sample rate of the (analog) data in Hz", NULL, NULL },
+	{ "format", "Data format", "The format of the data (data type, signedness, endianness)", NULL, NULL },
 	ALL_ZERO
 };
 
@@ -256,23 +256,21 @@ static const struct sr_option *get_options(void)
 
 static void cleanup(struct sr_input *in)
 {
-	struct context *inc;
+	g_free(in->priv);
+	in->priv = NULL;
 
-	inc = in->priv;
 	g_variant_unref(options[0].def);
 	g_variant_unref(options[1].def);
 	g_variant_unref(options[2].def);
 	g_slist_free_full(options[2].values, (GDestroyNotify)g_variant_unref);
-	g_free(inc);
-	in->priv = NULL;
 }
 
 static int reset(struct sr_input *in)
 {
 	struct context *inc = in->priv;
 
-	cleanup(in);
 	inc->started = FALSE;
+
 	g_string_truncate(in->buf, 0);
 
 	return SR_OK;
@@ -281,7 +279,7 @@ static int reset(struct sr_input *in)
 SR_PRIV struct sr_input_module input_raw_analog = {
 	.id = "raw_analog",
 	.name = "RAW analog",
-	.desc = "analog signals without header",
+	.desc = "Raw analog data without header",
 	.exts = (const char*[]){"raw", "bin", NULL},
 	.options = get_options,
 	.init = init,

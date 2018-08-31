@@ -74,10 +74,12 @@ libsigrok_la_SOURCES += \
 	src/input/binary.c \
 	src/input/chronovu_la8.c \
 	src/input/csv.c \
+	src/input/logicport.c \
 	src/input/raw_analog.c \
 	src/input/trace32_ad.c \
 	src/input/vcd.c \
-	src/input/wav.c
+	src/input/wav.c \
+	src/input/null.c
 
 # Output modules
 libsigrok_la_SOURCES += \
@@ -92,7 +94,8 @@ libsigrok_la_SOURCES += \
 	src/output/hex.c \
 	src/output/ols.c \
 	src/output/srzip.c \
-	src/output/vcd.c
+	src/output/vcd.c \
+	src/output/null.c
 
 # Transform modules
 libsigrok_la_SOURCES += \
@@ -105,7 +108,6 @@ libsigrok_la_SOURCES += \
 libsigrok_la_SOURCES += \
 	src/scpi.h \
 	src/scpi/scpi.c \
-	src/scpi/helpers.c \
 	src/scpi/scpi_tcp.c
 if NEED_RPC
 libsigrok_la_SOURCES += \
@@ -155,7 +157,9 @@ libsigrok_la_SOURCES += \
 	src/dmm/ut71x.c \
 	src/dmm/ut372.c \
 	src/dmm/vc870.c \
-	src/dmm/dtm0660.c
+	src/dmm/dtm0660.c \
+	src/dmm/ms8250d.c \
+	src/dmm/vc96.c
 
 # Hardware (LCR chip parsers)
 if NEED_SERIAL
@@ -288,6 +292,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/dreamsourcelab-dslogic/protocol.c \
 	src/hardware/dreamsourcelab-dslogic/api.c
 endif
+if HW_FLUKE_45
+src_libdrivers_la_SOURCES += \
+	src/hardware/fluke-45/protocol.h \
+	src/hardware/fluke-45/protocol.c \
+	src/hardware/fluke-45/api.c
+endif
 if HW_FLUKE_DMM
 src_libdrivers_la_SOURCES += \
 	src/hardware/fluke-dmm/protocol.h \
@@ -324,6 +334,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/gwinstek-gds-800/protocol.c \
 	src/hardware/gwinstek-gds-800/api.c
 endif
+if HW_GWINSTEK_GPD
+src_libdrivers_la_SOURCES += \
+	src/hardware/gwinstek-gpd/protocol.h \
+	src/hardware/gwinstek-gpd/protocol.c \
+	src/hardware/gwinstek-gpd/api.c
+endif
 if HW_HAMEG_HMO
 src_libdrivers_la_SOURCES += \
 	src/hardware/hameg-hmo/protocol.h \
@@ -354,6 +370,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/hp-3457a/protocol.c \
 	src/hardware/hp-3457a/api.c
 endif
+if HW_HP_3478A
+src_libdrivers_la_SOURCES += \
+	src/hardware/hp-3478a/protocol.h \
+	src/hardware/hp-3478a/protocol.c \
+	src/hardware/hp-3478a/api.c
+endif
 if HW_HUNG_CHANG_DSO_2100
 src_libdrivers_la_SOURCES += \
 	src/hardware/hung-chang-dso-2100/protocol.h \
@@ -371,6 +393,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/ikalogic-scanaplus/protocol.h \
 	src/hardware/ikalogic-scanaplus/protocol.c \
 	src/hardware/ikalogic-scanaplus/api.c
+endif
+if HW_IPDBG_LA
+src_libdrivers_la_SOURCES += \
+	src/hardware/ipdbg-la/protocol.h \
+	src/hardware/ipdbg-la/protocol.c \
+	src/hardware/ipdbg-la/api.c
 endif
 if HW_KECHENG_KC_330B
 src_libdrivers_la_SOURCES += \
@@ -456,6 +484,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/pipistrello-ols/protocol.c \
 	src/hardware/pipistrello-ols/api.c
 endif
+if HW_RDTECH_DPS
+src_libdrivers_la_SOURCES += \
+	src/hardware/rdtech-dps/protocol.h \
+	src/hardware/rdtech-dps/protocol.c \
+	src/hardware/rdtech-dps/api.c
+endif
 if HW_RIGOL_DS
 src_libdrivers_la_SOURCES += \
 	src/hardware/rigol-ds/protocol.h \
@@ -496,6 +530,12 @@ endif
 if HW_SERIAL_LCR
 src_libdrivers_la_SOURCES += \
 	src/hardware/serial-lcr/api.c
+endif
+if HW_SIGLENT_SDS
+src_libdrivers_la_SOURCES += \
+	src/hardware/siglent-sds/protocol.h \
+	src/hardware/siglent-sds/protocol.c \
+	src/hardware/siglent-sds/api.c
 endif
 if HW_SYSCLK_LWLA
 src_libdrivers_la_SOURCES += \
@@ -560,6 +600,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/zeroplus-logic-cube/protocol.h \
 	src/hardware/zeroplus-logic-cube/protocol.c \
 	src/hardware/zeroplus-logic-cube/api.c
+endif
+if HW_ZKETECH_EBD_USB
+src_libdrivers_la_SOURCES += \
+	src/hardware/zketech-ebd-usb/protocol.h \
+	src/hardware/zketech-ebd-usb/protocol.c \
+	src/hardware/zketech-ebd-usb/api.c
 endif
 
 libsigrok_la_LIBADD = src/libdrivers.lo $(SR_EXTRA_LIBS) $(LIBSIGROK_LIBS)

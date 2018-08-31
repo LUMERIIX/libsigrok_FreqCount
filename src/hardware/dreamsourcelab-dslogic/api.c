@@ -214,9 +214,10 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			continue;
 		}
 
-		usb_get_port_path(devlist[i], connection_id, sizeof(connection_id));
-
 		libusb_close(hdl);
+
+		if (usb_get_port_path(devlist[i], connection_id, sizeof(connection_id)) < 0)
+			continue;
 
 		prof = NULL;
 		for (j = 0; supported_device[j].vid; j++) {
@@ -267,14 +268,16 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 					libusb_get_device_address(devlist[i]), NULL);
 		} else {
 			if (ezusb_upload_firmware(drvc->sr_ctx, devlist[i],
-					USB_CONFIGURATION, prof->firmware) == SR_OK)
+					USB_CONFIGURATION, prof->firmware) == SR_OK) {
 				/* Store when this device's FW was updated. */
 				devc->fw_updated = g_get_monotonic_time();
-			else
+			} else {
 				sr_err("Firmware upload failed for "
-				       "device %d.%d (logical).",
+				       "device %d.%d (logical), name %s.",
 				       libusb_get_bus_number(devlist[i]),
-				       libusb_get_device_address(devlist[i]));
+				       libusb_get_device_address(devlist[i]),
+				       prof->firmware);
+			}
 			sdi->inst_type = SR_INST_USB;
 			sdi->conn = sr_usb_dev_inst_new(libusb_get_bus_number(devlist[i]),
 					0xff, NULL);
@@ -359,8 +362,10 @@ static int dev_open(struct sr_dev_inst *sdi)
 		devc->cur_samplerate = devc->samplerates[0];
 	}
 
-	if (devc->cur_threshold == 0.0)
+	if (devc->cur_threshold == 0.0) {
 		devc->cur_threshold = thresholds[1][0];
+		return dslogic_set_voltage_threshold(sdi, devc->cur_threshold);
+	}
 
 	return SR_OK;
 }
@@ -514,12 +519,16 @@ static int config_list(uint32_t key, GVariant **data,
 	case SR_CONF_DEVICE_OPTIONS:
 		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
 	case SR_CONF_VOLTAGE_THRESHOLD:
+		if (!devc || !devc->profile)
+			return SR_ERR_ARG;
 		if (!strcmp(devc->profile->model, "DSLogic"))
 			*data = std_gvar_thresholds(ARRAY_AND_SIZE(thresholds));
 		else
 			*data = std_gvar_min_max_step_thresholds(0.0, 5.0, 0.1);
 		break;
 	case SR_CONF_SAMPLERATE:
+		if (!devc)
+			return SR_ERR_ARG;
 		*data = std_gvar_samplerates(devc->samplerates, devc->num_samplerates);
 		break;
 	case SR_CONF_TRIGGER_MATCH:

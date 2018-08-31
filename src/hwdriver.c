@@ -177,8 +177,12 @@ static struct sr_key_info sr_key_info_config[] = {
 		"Under-voltage condition", NULL},
 	{SR_CONF_UNDER_VOLTAGE_CONDITION_ACTIVE, SR_T_BOOL, "uvc_active",
 		"Under-voltage condition active", NULL},
+	{SR_CONF_UNDER_VOLTAGE_CONDITION_THRESHOLD, SR_T_FLOAT, "uvc_threshold",
+		"Under-voltage condition threshold", NULL},
 	{SR_CONF_TRIGGER_LEVEL, SR_T_FLOAT, "triggerlevel",
 		"Trigger level", NULL},
+	{SR_CONF_EXTERNAL_CLOCK_SOURCE, SR_T_STRING, "external_clock_source",
+		"External clock source", NULL},
 
 	/* Special stuff */
 	{SR_CONF_SESSIONFILE, SR_T_STRING, "sessionfile",
@@ -633,7 +637,8 @@ SR_PRIV int sr_dev_acquisition_stop(struct sr_dev_inst *sdi)
 }
 
 static void log_key(const struct sr_dev_inst *sdi,
-	const struct sr_channel_group *cg, uint32_t key, int op, GVariant *data)
+	const struct sr_channel_group *cg, uint32_t key, unsigned int op,
+	GVariant *data)
 {
 	const char *opstr;
 	const struct sr_key_info *srci;
@@ -655,7 +660,7 @@ static void log_key(const struct sr_dev_inst *sdi,
 
 static int check_key(const struct sr_dev_driver *driver,
 		const struct sr_dev_inst *sdi, const struct sr_channel_group *cg,
-		uint32_t key, int op, GVariant *data)
+		uint32_t key, unsigned int op, GVariant *data)
 {
 	const struct sr_key_info *srci;
 	gsize num_opts, i;

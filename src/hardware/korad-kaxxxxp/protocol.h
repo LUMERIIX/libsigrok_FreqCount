@@ -2,6 +2,7 @@
  * This file is part of the libsigrok project.
  *
  * Copyright (C) 2015 Hannu Vuolasaho <vuokkosetae@gmail.com>
+ * Copyright (C) 2018 Frank Stettner <frank-stettner@gmx.net>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +37,7 @@ enum {
 	KORAD_KA3005P,
 	KORAD_KA3005P_0X01,
 	KORAD_KD3005P,
+	RND_320K30PV,
 	/* Support for future devices with this protocol. */
 };
 
@@ -70,7 +72,7 @@ struct dev_context {
 
 	struct sr_sw_limits limits;
 	int64_t req_sent_at;
-	gboolean reply_pending;
+	GMutex rw_mutex;
 
 	float current;          /**< Last current value [A] read from device. */
 	float current_max;      /**< Output current set. */
@@ -83,9 +85,8 @@ struct dev_context {
 	gboolean ocp_enabled;    /**< Output current protection enabled. */
 	gboolean ovp_enabled;    /**< Output voltage protection enabled. */
 
-	int target;              /**< What reply to expect. */
+	int acquisition_target;  /**< What reply to expect. */
 	int program;             /**< Program to store or recall. */
-	char reply[6];
 };
 
 SR_PRIV int korad_kaxxxxp_send_cmd(struct sr_serial_dev_inst *serial,
@@ -93,11 +94,9 @@ SR_PRIV int korad_kaxxxxp_send_cmd(struct sr_serial_dev_inst *serial,
 SR_PRIV int korad_kaxxxxp_read_chars(struct sr_serial_dev_inst *serial,
 					int count, char *buf);
 SR_PRIV int korad_kaxxxxp_set_value(struct sr_serial_dev_inst *serial,
-					struct dev_context *devc);
-SR_PRIV int korad_kaxxxxp_query_value(struct sr_serial_dev_inst *serial,
-					struct dev_context *devc);
-SR_PRIV int korad_kaxxxxp_get_reply(struct sr_serial_dev_inst *serial,
-					struct dev_context *devc);
+					int target, struct dev_context *devc);
+SR_PRIV int korad_kaxxxxp_get_value(struct sr_serial_dev_inst *serial,
+					int target, struct dev_context *devc);
 SR_PRIV int korad_kaxxxxp_get_all_values(struct sr_serial_dev_inst *serial,
 					struct dev_context *devc);
 SR_PRIV int korad_kaxxxxp_receive_data(int fd, int revents, void *cb_data);

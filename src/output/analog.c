@@ -113,7 +113,8 @@ static int receive(const struct sr_output *o, const struct sr_datafeed_packet *p
 				g_string_append_printf(*out, "%f",
 					g_variant_get_double(src->data));
 			} else if (srci->datatype == SR_T_UINT64) {
-				g_string_append_printf(*out, "%" PRIu64,
+				g_string_append_printf(*out, "%"
+					G_GUINT64_FORMAT,
 					g_variant_get_uint64(src->data));
 			}
 			g_string_append(*out, "\n");
@@ -204,7 +205,7 @@ static int cleanup(struct sr_output *o)
 SR_PRIV struct sr_output_module output_analog = {
 	.id = "analog",
 	.name = "Analog",
-	.desc = "Analog data and types",
+	.desc = "ASCII analog data values and units",
 	.exts = NULL,
 	.flags = 0,
 	.options = get_options,

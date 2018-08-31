@@ -107,11 +107,12 @@ static int beaglelogic_tcp_send_cmd(struct dev_context *devc,
 
 	if (out < 0) {
 		sr_err("Send error: %s", g_strerror(errno));
+		g_free(buf);
 		return SR_ERR;
 	}
 
 	if (out < (int)strlen(buf)) {
-		sr_dbg("Only sent %d/%lu bytes of command: '%s'.", out,
+		sr_dbg("Only sent %d/%zu bytes of command: '%s'.", out,
 		       strlen(buf), buf);
 	}
 
@@ -171,6 +172,7 @@ static int beaglelogic_tcp_get_string(struct dev_context *devc, const char *cmd,
 	int len;
 	gint64 timeout;
 
+	*tcp_resp = NULL;
 	if (cmd) {
 		if (beaglelogic_tcp_send_cmd(devc, cmd) != SR_OK)
 			return SR_ERR;
@@ -287,9 +289,11 @@ static int beaglelogic_get_samplerate(struct dev_context *devc)
 	int arg, err;
 
 	err = beaglelogic_tcp_get_int(devc, "samplerate", &arg);
-	devc->cur_samplerate = arg;
+	if (err)
+		return err;
 
-	return err;
+	devc->cur_samplerate = arg;
+	return SR_OK;
 }
 
 static int beaglelogic_set_samplerate(struct dev_context *devc)

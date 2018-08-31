@@ -44,7 +44,7 @@ static const uint32_t devopts[] = {
 
 static const uint32_t devopts_cg[] = {
 	SR_CONF_ENABLED | SR_CONF_SET,
-	SR_CONF_REGULATION | SR_CONF_GET,
+	SR_CONF_REGULATION | SR_CONF_GET | SR_CONF_LIST,
 	SR_CONF_VOLTAGE | SR_CONF_GET,
 	SR_CONF_CURRENT | SR_CONF_GET,
 	SR_CONF_CURRENT_LIMIT | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
@@ -54,6 +54,12 @@ static const uint32_t devopts_cg[] = {
 	SR_CONF_OVER_TEMPERATURE_PROTECTION_ACTIVE | SR_CONF_GET,
 	SR_CONF_UNDER_VOLTAGE_CONDITION | SR_CONF_GET,
 	SR_CONF_UNDER_VOLTAGE_CONDITION_ACTIVE | SR_CONF_GET,
+	SR_CONF_UNDER_VOLTAGE_CONDITION_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+};
+
+static const char *regulation[] = {
+	/* CC mode only. */
+	"CC",
 };
 
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
@@ -149,7 +155,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	ch = sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "V");
 	cg->channels = g_slist_append(cg->channels, ch);
 
-	ch = sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "I");
+	ch = sr_channel_new(sdi, 1, SR_CHANNEL_ANALOG, TRUE, "I");
 	cg->channels = g_slist_append(cg->channels, ch);
 
 	devc = g_malloc0(sizeof(struct dev_context));
@@ -171,8 +177,14 @@ static int config_list(uint32_t key, GVariant **data,
 		case SR_CONF_DEVICE_OPTIONS:
 			*data = std_gvar_array_u32(ARRAY_AND_SIZE(devopts_cg));
 			break;
+		case SR_CONF_REGULATION:
+			*data = std_gvar_array_str(ARRAY_AND_SIZE(regulation));
+			break;
 		case SR_CONF_CURRENT_LIMIT:
 			*data = std_gvar_min_max_step(0.0, 6.0, 0.001);
+			break;
+		case SR_CONF_UNDER_VOLTAGE_CONDITION_THRESHOLD:
+			*data = std_gvar_min_max_step(0.0, 60.0, 0.001);
 			break;
 		default:
 			return SR_ERR_NA;
@@ -235,10 +247,15 @@ static int config_get(uint32_t key, GVariant **data,
 		*data = g_variant_new_boolean(devc->otp_active);
 		break;
 	case SR_CONF_UNDER_VOLTAGE_CONDITION:
-		*data = g_variant_new_boolean(TRUE); /* Always on. */
+		if (reloadpro_get_under_voltage_threshold(sdi, &fvalue) == SR_OK)
+			*data = g_variant_new_boolean(fvalue != 0.0);
 		break;
 	case SR_CONF_UNDER_VOLTAGE_CONDITION_ACTIVE:
 		*data = g_variant_new_boolean(devc->uvc_active);
+		break;
+	case SR_CONF_UNDER_VOLTAGE_CONDITION_THRESHOLD:
+		if (reloadpro_get_under_voltage_threshold(sdi, &fvalue) == SR_OK)
+			*data = g_variant_new_double(fvalue);
 		break;
 	default:
 		return SR_ERR_NA;
@@ -264,6 +281,9 @@ static int config_set(uint32_t key, GVariant *data,
 		return reloadpro_set_on_off(sdi, g_variant_get_boolean(data));
 	case SR_CONF_CURRENT_LIMIT:
 		return reloadpro_set_current_limit(sdi, g_variant_get_double(data));
+	case SR_CONF_UNDER_VOLTAGE_CONDITION_THRESHOLD:
+		return reloadpro_set_under_voltage_threshold(sdi,
+			g_variant_get_double(data));
 	default:
 		return SR_ERR_NA;
 	}
@@ -289,6 +309,8 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	struct sr_serial_dev_inst *serial;
 
 	devc = sdi->priv;
+	devc->acquisition_running = TRUE;
+
 	serial = sdi->conn;
 
 	/* Send the 'monitor <ms>' command (doesn't have a reply). */
@@ -299,16 +321,33 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		return SR_ERR;
 	}
 
-	serial_source_add(sdi->session, serial, G_IO_IN, 100,
-			  reloadpro_receive_data, (void *)sdi);
-
 	sr_sw_limits_acquisition_start(&devc->limits);
 	std_session_send_df_header(sdi);
 
 	memset(devc->buf, 0, RELOADPRO_BUFSIZE);
 	devc->buflen = 0;
 
+	g_mutex_init(&devc->acquisition_mutex);
+
+	serial_source_add(sdi->session, serial, G_IO_IN, 100,
+			  reloadpro_receive_data, (void *)sdi);
+
 	return SR_OK;
+}
+
+static int dev_acquisition_stop(struct sr_dev_inst *sdi)
+{
+	struct dev_context *devc;
+	int ret;
+
+	devc = sdi->priv;
+	devc->acquisition_running = FALSE;
+
+	ret = std_serial_dev_acquisition_stop(sdi);
+	g_mutex_clear(&devc->acquisition_mutex);
+
+	return ret;
+
 }
 
 static struct sr_dev_driver arachnid_labs_re_load_pro_driver_info = {
@@ -326,7 +365,7 @@ static struct sr_dev_driver arachnid_labs_re_load_pro_driver_info = {
 	.dev_open = std_serial_dev_open,
 	.dev_close = dev_close,
 	.dev_acquisition_start = dev_acquisition_start,
-	.dev_acquisition_stop = std_serial_dev_acquisition_stop,
+	.dev_acquisition_stop = dev_acquisition_stop,
 	.context = NULL,
 };
 SR_REGISTER_DEV_DRIVER(arachnid_labs_re_load_pro_driver_info);

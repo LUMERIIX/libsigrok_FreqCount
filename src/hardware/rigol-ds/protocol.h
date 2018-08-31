@@ -74,12 +74,25 @@ struct rigol_ds_series {
 	int buffer_samples;
 };
 
+enum cmds {
+	CMD_GET_HORIZ_TRIGGERPOS,
+	CMD_SET_HORIZ_TRIGGERPOS,
+};
+
+struct rigol_ds_command {
+	int cmd;
+	const char *str;
+};
+
 struct rigol_ds_model {
 	const struct rigol_ds_series *series;
 	const char *name;
 	uint64_t min_timebase[2];
 	unsigned int analog_channels;
 	bool has_digital;
+	const char **trigger_sources;
+	unsigned int num_trigger_sources;
+	const struct rigol_ds_command *cmds;
 };
 
 enum wait_events {
@@ -118,7 +131,9 @@ struct dev_context {
 	float attenuation[MAX_ANALOG_CHANNELS];
 	float vdiv[MAX_ANALOG_CHANNELS];
 	int vert_reference[MAX_ANALOG_CHANNELS];
+	float vert_origin[MAX_ANALOG_CHANNELS];
 	float vert_offset[MAX_ANALOG_CHANNELS];
+	float vert_inc[MAX_ANALOG_CHANNELS];
 	char *trigger_source;
 	float horiz_triggerpos;
 	char *trigger_slope;

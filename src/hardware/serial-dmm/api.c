@@ -56,6 +56,8 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	int dropped, ret;
 	size_t len;
 	uint8_t buf[128];
+	size_t ch_idx;
+	char ch_name[12];
 
 	dmm = (struct dmm_info *)di;
 
@@ -131,7 +133,13 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	sdi->inst_type = SR_INST_SERIAL;
 	sdi->conn = serial;
 	sdi->priv = devc;
-	sr_channel_new(sdi, 0, SR_CHANNEL_ANALOG, TRUE, "P1");
+	dmm->channel_count = 1;
+	if (dmm->packet_parse == sr_metex14_4packets_parse)
+		dmm->channel_count = 4;
+	for (ch_idx = 0; ch_idx < dmm->channel_count; ch_idx++) {
+		snprintf(ch_name, sizeof(ch_name), "P%zu", ch_idx);
+		sr_channel_new(sdi, ch_idx, SR_CHANNEL_ANALOG, TRUE, ch_name);
+	}
 	devices = g_slist_append(devices, sdi);
 
 scan_cleanup:
@@ -197,7 +205,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 			.context = NULL, \
 		}, \
 		VENDOR, MODEL, CONN, BAUDRATE, PACKETSIZE, TIMEOUT, DELAY, \
-		REQUEST, VALID, PARSE, DETAILS, sizeof(struct CHIPSET##_info) \
+		REQUEST, 1, VALID, PARSE, DETAILS, sizeof(struct CHIPSET##_info) \
 	}).di
 
 SR_REGISTER_DEV_DRIVER_LIST(serial_dmm_drivers,
@@ -422,6 +430,15 @@ SR_REGISTER_DEV_DRIVER_LIST(serial_dmm_drivers,
 		NULL
 	),
 	/* }}} */
+	/* ms8250d based meters {{{ */
+	DMM(
+		"mastech-ms8250d", ms8250d,
+		"MASTECH", "MS8250D", "2400/8n1/rts=0/dtr=1",
+		2400, MS8250D_PACKET_SIZE, 0, 0, NULL,
+		sr_ms8250d_packet_valid, sr_ms8250d_parse,
+		NULL
+	),
+	/* }}} */
 	/* metex14 based meters {{{ */
 	DMM(
 		"mastech-mas345", metex14,
@@ -440,8 +457,8 @@ SR_REGISTER_DEV_DRIVER_LIST(serial_dmm_drivers,
 	DMM(
 		"metex-m3860m", metex14,
 		"Metex", "M-3860M", "9600/7n2/rts=0/dtr=1", 9600,
-		METEX14_PACKET_SIZE, 0, 0, sr_metex14_packet_request,
-		sr_metex14_packet_valid, sr_metex14_parse,
+		4 * METEX14_PACKET_SIZE, 0, 0, sr_metex14_packet_request,
+		sr_metex14_4packets_valid, sr_metex14_4packets_parse,
 		NULL
 	),
 	DMM(
@@ -475,8 +492,8 @@ SR_REGISTER_DEV_DRIVER_LIST(serial_dmm_drivers,
 	DMM(
 		"peaktech-4390a", metex14,
 		"PeakTech", "4390A", "9600/7n2/rts=0/dtr=1", 9600,
-		METEX14_PACKET_SIZE, 0, 0, sr_metex14_packet_request,
-		sr_metex14_packet_valid, sr_metex14_parse,
+		4 * METEX14_PACKET_SIZE, 0, 0, sr_metex14_packet_request,
+		sr_metex14_4packets_valid, sr_metex14_4packets_parse,
 		NULL
 	),
 	DMM(
@@ -605,6 +622,15 @@ SR_REGISTER_DEV_DRIVER_LIST(serial_dmm_drivers,
 		"Voltcraft", "VC-870 (UT-D02 cable)", "9600/8n1/rts=0/dtr=1",
 		9600, VC870_PACKET_SIZE, 0, 0, NULL,
 		sr_vc870_packet_valid, sr_vc870_parse, NULL
+	),
+	/* }}} */
+	/* vc96 based meters {{{ */
+	DMM(
+		"voltcraft-vc96", vc96,
+		"Voltcraft", "VC-96", "1200/8n2", 1200,
+		VC96_PACKET_SIZE, 0, 0, NULL,
+		sr_vc96_packet_valid, sr_vc96_parse,
+		NULL
 	),
 	/* }}} */
 	/*

@@ -246,8 +246,6 @@ static int config_set(uint32_t key, GVariant *data,
 	state = devc->model_state;
 	update_sample_rate = FALSE;
 
-	ret = SR_ERR_NA;
-
 	switch (key) {
 	case SR_CONF_LIMIT_FRAMES:
 		devc->frame_limit = g_variant_get_uint64(data);
@@ -368,11 +366,11 @@ static int config_list(uint32_t key, GVariant **data,
 	case SR_CONF_DEVICE_OPTIONS:
 		if (!cg) {
 			if (model)
-				*data = std_gvar_array_u32((const uint32_t *)model->devopts, model->num_devopts);
+				*data = std_gvar_array_u32(*model->devopts, model->num_devopts);
 			else
 				*data = std_gvar_array_u32(ARRAY_AND_SIZE(drvopts));
 		} else if (cg_type == CG_ANALOG) {
-			*data = std_gvar_array_u32((const uint32_t *)model->devopts_cg_analog, model->num_devopts_cg_analog);
+			*data = std_gvar_array_u32(*model->devopts_cg_analog, model->num_devopts_cg_analog);
 		} else {
 			*data = std_gvar_array_u32(NULL, 0);
 		}
@@ -380,6 +378,8 @@ static int config_list(uint32_t key, GVariant **data,
 	case SR_CONF_COUPLING:
 		if (!cg)
 			return SR_ERR_CHANNEL_GROUP;
+		if (!model)
+			return SR_ERR_ARG;
 		*data = g_variant_new_strv(*model->coupling_options, model->num_coupling_options);
 		break;
 	case SR_CONF_TRIGGER_SOURCE:
@@ -400,6 +400,8 @@ static int config_list(uint32_t key, GVariant **data,
 	case SR_CONF_VDIV:
 		if (!cg)
 			return SR_ERR_CHANNEL_GROUP;
+		if (!model)
+			return SR_ERR_ARG;
 		*data = std_gvar_tuple_array(*model->vdivs, model->num_vdivs);
 		break;
 	default:
@@ -507,6 +509,7 @@ static int hmo_setup_channels(const struct sr_dev_inst *sdi)
 	struct sr_channel *ch;
 	struct dev_context *devc;
 	struct sr_scpi_dev_inst *scpi;
+	int ret;
 
 	devc = sdi->priv;
 	scpi = sdi->conn;
@@ -526,8 +529,10 @@ static int hmo_setup_channels(const struct sr_dev_inst *sdi)
 				   (*model->scpi_dialect)[SCPI_CMD_SET_ANALOG_CHAN_STATE],
 				   ch->index + 1, ch->enabled);
 
-			if (sr_scpi_send(scpi, command) != SR_OK)
+			if (sr_scpi_send(scpi, command) != SR_OK) {
+				g_free(pod_enabled);
 				return SR_ERR;
+			}
 			state->analog_channels[ch->index].state = ch->enabled;
 			setup_changed = TRUE;
 			break;
@@ -545,30 +550,37 @@ static int hmo_setup_channels(const struct sr_dev_inst *sdi)
 				   (*model->scpi_dialect)[SCPI_CMD_SET_DIG_CHAN_STATE],
 				   ch->index, ch->enabled);
 
-			if (sr_scpi_send(scpi, command) != SR_OK)
+			if (sr_scpi_send(scpi, command) != SR_OK) {
+				g_free(pod_enabled);
 				return SR_ERR;
+			}
 
 			state->digital_channels[ch->index] = ch->enabled;
 			setup_changed = TRUE;
 			break;
 		default:
+			g_free(pod_enabled);
 			return SR_ERR;
 		}
 	}
 
+	ret = SR_OK;
 	for (i = 0; i < model->digital_pods; i++) {
 		if (state->digital_pods[i] == pod_enabled[i])
 			continue;
 		g_snprintf(command, sizeof(command),
 			   (*model->scpi_dialect)[SCPI_CMD_SET_DIG_POD_STATE],
 			   i + 1, pod_enabled[i]);
-		if (sr_scpi_send(scpi, command) != SR_OK)
-			return SR_ERR;
+		if (sr_scpi_send(scpi, command) != SR_OK) {
+			ret = SR_ERR;
+			break;
+		}
 		state->digital_pods[i] = pod_enabled[i];
 		setup_changed = TRUE;
 	}
-
 	g_free(pod_enabled);
+	if (ret != SR_OK)
+		return ret;
 
 	if (setup_changed && hmo_update_sample_rate(sdi) != SR_OK)
 		return SR_ERR;

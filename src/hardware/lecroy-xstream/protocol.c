@@ -92,11 +92,11 @@ static const char *trigger_sources[] = {
 
 static const uint64_t timebases[][2] = {
 	/* picoseconds */
-	{ 20, 1000000000000 },
-	{ 50, 1000000000000 },
-	{ 100, 1000000000000 },
-	{ 200, 1000000000000 },
-	{ 500, 1000000000000 },
+	{ 20, UINT64_C(1000000000000) },
+	{ 50, UINT64_C(1000000000000) },
+	{ 100, UINT64_C(1000000000000) },
+	{ 200, UINT64_C(1000000000000) },
+	{ 500, UINT64_C(1000000000000) },
 	/* nanoseconds */
 	{ 1, 1000000000 },
 	{ 2, 1000000000 },
@@ -665,6 +665,8 @@ SR_PRIV int lecroy_xstream_receive_data(int fd, int revents, void *cb_data)
 		return SR_ERR;
 
 	if (analog.num_samples == 0) {
+		g_free(analog.data);
+
 		/* No data available, we have to acquire data first. */
 		g_snprintf(command, sizeof(command), "ARM;WAIT;*OPC;C%d:WAVEFORM?", ch->index + 1);
 		sr_scpi_send(sdi->conn, command);
@@ -674,8 +676,10 @@ SR_PRIV int lecroy_xstream_receive_data(int fd, int revents, void *cb_data)
 	} else {
 		/* Update sample rate if needed. */
 		if (state->sample_rate == 0)
-			if (lecroy_xstream_update_sample_rate(sdi, analog.num_samples) != SR_OK)
+			if (lecroy_xstream_update_sample_rate(sdi, analog.num_samples) != SR_OK) {
+				g_free(analog.data);
 				return SR_ERR;
+			}
 	}
 
 	/*

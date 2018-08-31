@@ -245,6 +245,19 @@ SR_PRIV void demo_generate_analog_pattern(struct analog_gen *ag, uint64_t sample
 	}
 }
 
+static uint64_t encode_number_to_gray(uint64_t nr)
+{
+	return nr ^ (nr >> 1);
+}
+
+static void set_logic_data(uint64_t bits, uint8_t *data, size_t len)
+{
+	while (len--) {
+		*data++ = bits & 0xff;
+		bits >>= 8;
+	}
+}
+
 static void logic_generator(struct sr_dev_inst *sdi, uint64_t size)
 {
 	struct dev_context *devc;
@@ -253,6 +266,7 @@ static void logic_generator(struct sr_dev_inst *sdi, uint64_t size)
 	uint8_t *sample;
 	const uint8_t *image_col;
 	size_t col_count, col_height;
+	uint64_t gray;
 
 	devc = sdi->priv;
 
@@ -324,6 +338,15 @@ static void logic_generator(struct sr_dev_inst *sdi, uint64_t size)
 			}
 			devc->step++;
 			devc->step %= col_count;
+		}
+		break;
+	case PATTERN_GRAYCODE:
+		for (i = 0; i < size; i += devc->logic_unitsize) {
+			devc->step++;
+			devc->step &= devc->all_logic_channels_mask;
+			gray = encode_number_to_gray(devc->step);
+			gray &= devc->all_logic_channels_mask;
+			set_logic_data(gray, &devc->logic_data[i], devc->logic_unitsize);
 		}
 		break;
 	default:
@@ -470,12 +493,13 @@ SR_PRIV int demo_prepare_data(int fd, int revents, void *cb_data)
 	if (samples_todo == 0)
 		return G_SOURCE_CONTINUE;
 
-#if (SAMPLES_PER_FRAME > 0) /* Avoid "comparison < 0 always false" warning. */
-	/* Never send more samples than a frame can fit... */
-	samples_todo = MIN(samples_todo, SAMPLES_PER_FRAME);
-	/* ...or than we need to finish the current frame. */
-	samples_todo = MIN(samples_todo, SAMPLES_PER_FRAME - devc->sent_frame_samples);
-#endif
+	if (devc->limit_frames) {
+		/* Never send more samples than a frame can fit... */
+		samples_todo = MIN(samples_todo, SAMPLES_PER_FRAME);
+		/* ...or than we need to finish the current frame. */
+		samples_todo = MIN(samples_todo,
+			SAMPLES_PER_FRAME - devc->sent_frame_samples);
+	}
 
 	/* Calculate the actual time covered by this run back from the sample
 	 * count, rounded towards zero. This avoids getting stuck on a too-low
@@ -483,7 +507,7 @@ SR_PRIV int demo_prepare_data(int fd, int revents, void *cb_data)
 	 */
 	todo_us = samples_todo * G_USEC_PER_SEC / devc->cur_samplerate;
 
-	logic_done  = devc->num_logic_channels  > 0 ? 0 : samples_todo;
+	logic_done = devc->num_logic_channels > 0 ? 0 : samples_todo;
 	if (!devc->enabled_logic_channels)
 		logic_done = samples_todo;
 	analog_done = devc->num_analog_channels > 0 ? 0 : samples_todo;
@@ -530,12 +554,15 @@ SR_PRIV int demo_prepare_data(int fd, int revents, void *cb_data)
 	devc->sent_frame_samples += samples_todo;
 	devc->spent_us += todo_us;
 
-#if (SAMPLES_PER_FRAME > 0) /* Avoid "comparison >= 0 always true" warning. */
-	if (devc->sent_frame_samples >= SAMPLES_PER_FRAME) {
+	if (devc->limit_frames && devc->sent_frame_samples >= SAMPLES_PER_FRAME) {
 		std_session_send_frame_end(sdi);
 		devc->sent_frame_samples = 0;
+		devc->limit_frames--;
+		if (!devc->limit_frames) {
+			sr_dbg("Requested number of frames reached.");
+			sr_dev_acquisition_stop(sdi);
+		}
 	}
-#endif
 
 	if ((devc->limit_samples > 0 && devc->sent_samples >= devc->limit_samples)
 			|| (limit_us > 0 && devc->spent_us >= limit_us)) {
@@ -554,11 +581,9 @@ SR_PRIV int demo_prepare_data(int fd, int revents, void *cb_data)
 		}
 		sr_dbg("Requested number of samples reached.");
 		sr_dev_acquisition_stop(sdi);
-	} else {
-#if (SAMPLES_PER_FRAME > 0)
+	} else if (devc->limit_frames) {
 		if (devc->sent_frame_samples == 0)
 			std_session_send_frame_begin(sdi);
-#endif
 	}
 
 	return G_SOURCE_CONTINUE;

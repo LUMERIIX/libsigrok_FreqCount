@@ -44,11 +44,13 @@ static const char *logic_pattern_str[] = {
 	"all-low",
 	"all-high",
 	"squid",
+	"graycode",
 };
 
 static const uint32_t scanopts[] = {
 	SR_CONF_NUM_LOGIC_CHANNELS,
 	SR_CONF_NUM_ANALOG_CHANNELS,
+	SR_CONF_LIMIT_FRAMES,
 };
 
 static const uint32_t drvopts[] = {
@@ -61,6 +63,7 @@ static const uint32_t devopts[] = {
 	SR_CONF_CONTINUOUS,
 	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
+	SR_CONF_LIMIT_FRAMES | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_AVERAGING | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_AVG_SAMPLES | SR_CONF_GET | SR_CONF_SET,
@@ -95,10 +98,12 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	struct analog_gen *ag;
 	GSList *l;
 	int num_logic_channels, num_analog_channels, pattern, i;
+	uint64_t limit_frames;
 	char channel_name[16];
 
 	num_logic_channels = DEFAULT_NUM_LOGIC_CHANNELS;
 	num_analog_channels = DEFAULT_NUM_ANALOG_CHANNELS;
+	limit_frames = DEFAULT_LIMIT_FRAMES;
 	for (l = options; l; l = l->next) {
 		src = l->data;
 		switch (src->key) {
@@ -107,6 +112,9 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			break;
 		case SR_CONF_NUM_ANALOG_CHANNELS:
 			num_analog_channels = g_variant_get_int32(src->data);
+			break;
+		case SR_CONF_LIMIT_FRAMES:
+			limit_frames = g_variant_get_uint64(src->data);
 			break;
 		}
 	}
@@ -119,8 +127,12 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	devc->cur_samplerate = SR_KHZ(200);
 	devc->num_logic_channels = num_logic_channels;
 	devc->logic_unitsize = (devc->num_logic_channels + 7) / 8;
+	devc->all_logic_channels_mask = 1UL << 0;
+	devc->all_logic_channels_mask <<= devc->num_logic_channels;
+	devc->all_logic_channels_mask--;
 	devc->logic_pattern = DEFAULT_LOGIC_PATTERN;
 	devc->num_analog_channels = num_analog_channels;
+	devc->limit_frames = limit_frames;
 
 	if (num_logic_channels > 0) {
 		/* Logic channels, all in one channel group. */
@@ -219,6 +231,9 @@ static int config_get(uint32_t key, GVariant **data,
 	case SR_CONF_LIMIT_MSEC:
 		*data = g_variant_new_uint64(devc->limit_msec);
 		break;
+	case SR_CONF_LIMIT_FRAMES:
+		*data = g_variant_new_uint64(devc->limit_frames);
+		break;
 	case SR_CONF_AVERAGING:
 		*data = g_variant_new_boolean(devc->avg);
 		break;
@@ -279,6 +294,9 @@ static int config_set(uint32_t key, GVariant *data,
 	case SR_CONF_LIMIT_MSEC:
 		devc->limit_msec = g_variant_get_uint64(data);
 		devc->limit_samples = 0;
+		break;
+	case SR_CONF_LIMIT_FRAMES:
+		devc->limit_frames = g_variant_get_uint64(data);
 		break;
 	case SR_CONF_AVERAGING:
 		devc->avg = g_variant_get_boolean(data);
@@ -454,7 +472,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 	std_session_send_df_header(sdi);
 
-	if (SAMPLES_PER_FRAME > 0)
+	if (devc->limit_frames > 0)
 		std_session_send_frame_begin(sdi);
 
 	/* We use this timestamp to decide how many more samples to send. */
@@ -467,9 +485,12 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
+	struct dev_context *devc;
+
 	sr_session_source_remove(sdi->session, -1);
 
-	if (SAMPLES_PER_FRAME > 0)
+	devc = sdi->priv;
+	if (devc->limit_frames > 0)
 		std_session_send_frame_end(sdi);
 
 	std_session_send_df_end(sdi);

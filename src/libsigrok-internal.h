@@ -426,6 +426,8 @@ struct sr_input_module {
 	 * Check if this input module can load and parse the specified stream.
 	 *
 	 * @param[in] metadata Metadata the module can use to identify the stream.
+	 * @param[out] confidence "Strength" of the detection.
+	 *   Specialized handlers can take precedence over generic/basic support.
 	 *
 	 * @retval SR_OK This module knows the format.
 	 * @retval SR_ERR_NA There wasn't enough data for this module to
@@ -434,8 +436,15 @@ struct sr_input_module {
 	 *   it. This means the stream is either corrupt, or indicates a
 	 *   feature that the module does not support.
 	 * @retval SR_ERR This module does not know the format.
+	 *
+	 * Lower numeric values of 'confidence' mean that the input module
+	 * stronger believes in its capability to handle this specific format.
+	 * This way, multiple input modules can claim support for a format,
+	 * and the application can pick the best match, or try fallbacks
+	 * in case of errors. This approach also copes with formats that
+	 * are unreliable to detect in the absence of magic signatures.
 	 */
-	int (*format_match) (GHashTable *metadata);
+	int (*format_match) (GHashTable *metadata, unsigned int *confidence);
 
 	/**
 	 * Initialize the input module.
@@ -969,9 +978,10 @@ SR_PRIV GVariant *std_gvar_min_max_step_thresholds(const double dmin, const doub
 SR_PRIV GVariant *std_gvar_tuple_u64(uint64_t low, uint64_t high);
 SR_PRIV GVariant *std_gvar_tuple_double(double low, double high);
 
-SR_PRIV GVariant *std_gvar_array_i32(const int32_t *a, unsigned int n);
-SR_PRIV GVariant *std_gvar_array_u32(const uint32_t *a, unsigned int n);
-SR_PRIV GVariant *std_gvar_array_u64(const uint64_t *a, unsigned int n);
+SR_PRIV GVariant *std_gvar_array_i32(const int32_t a[], unsigned int n);
+SR_PRIV GVariant *std_gvar_array_u32(const uint32_t a[], unsigned int n);
+SR_PRIV GVariant *std_gvar_array_u64(const uint64_t a[], unsigned int n);
+SR_PRIV GVariant *std_gvar_array_str(const char *a[], unsigned int n);
 
 SR_PRIV GVariant *std_gvar_thresholds(const double a[][2], unsigned int n);
 
@@ -1241,6 +1251,21 @@ SR_PRIV void sr_fs9721_10_temp_c(struct sr_datafeed_analog *analog, void *info);
 SR_PRIV void sr_fs9721_01_10_temp_f_c(struct sr_datafeed_analog *analog, void *info);
 SR_PRIV void sr_fs9721_max_c_min(struct sr_datafeed_analog *analog, void *info);
 
+/*--- hardware/dmm/ms8250d.c ------------------------------------------------*/
+
+#define MS8250D_PACKET_SIZE 18
+
+struct ms8250d_info {
+	gboolean is_ac, is_dc, is_auto, is_rs232, is_micro, is_nano, is_kilo;
+	gboolean is_diode, is_milli, is_percent, is_mega, is_beep, is_farad;
+	gboolean is_ohm, is_rel, is_hold, is_ampere, is_volt, is_hz, is_bat;
+	gboolean is_ncv, is_min, is_max, is_sign, is_autotimer;
+};
+
+SR_PRIV gboolean sr_ms8250d_packet_valid(const uint8_t *buf);
+SR_PRIV int sr_ms8250d_parse(const uint8_t *buf, float *floatval,
+			     struct sr_datafeed_analog *analog, void *info);
+
 /*--- hardware/dmm/dtm0660.c ------------------------------------------------*/
 
 #define DTM0660_PACKET_SIZE 15
@@ -1273,11 +1298,13 @@ SR_PRIV int sr_m2110_parse(const uint8_t *buf, float *floatval,
 #define METEX14_PACKET_SIZE 14
 
 struct metex14_info {
+	size_t ch_idx;
 	gboolean is_ac, is_dc, is_resistance, is_capacity, is_temperature;
 	gboolean is_diode, is_frequency, is_ampere, is_volt, is_farad;
-	gboolean is_hertz, is_ohm, is_celsius, is_pico, is_nano, is_micro;
-	gboolean is_milli, is_kilo, is_mega, is_gain, is_decibel, is_hfe;
-	gboolean is_unitless, is_logic;
+	gboolean is_hertz, is_ohm, is_celsius, is_fahrenheit, is_watt;
+	gboolean is_pico, is_nano, is_micro, is_milli, is_kilo, is_mega;
+	gboolean is_gain, is_decibel, is_power, is_decibel_mw, is_power_factor;
+	gboolean is_hfe, is_unitless, is_logic, is_min, is_max, is_avg;
 };
 
 #ifdef HAVE_LIBSERIALPORT
@@ -1285,6 +1312,9 @@ SR_PRIV int sr_metex14_packet_request(struct sr_serial_dev_inst *serial);
 #endif
 SR_PRIV gboolean sr_metex14_packet_valid(const uint8_t *buf);
 SR_PRIV int sr_metex14_parse(const uint8_t *buf, float *floatval,
+			     struct sr_datafeed_analog *analog, void *info);
+SR_PRIV gboolean sr_metex14_4packets_valid(const uint8_t *buf);
+SR_PRIV int sr_metex14_4packets_parse(const uint8_t *buf, float *floatval,
 			     struct sr_datafeed_analog *analog, void *info);
 
 /*--- hardware/dmm/rs9lcd.c -------------------------------------------------*/
@@ -1343,6 +1373,21 @@ struct vc870_info {
 
 SR_PRIV gboolean sr_vc870_packet_valid(const uint8_t *buf);
 SR_PRIV int sr_vc870_parse(const uint8_t *buf, float *floatval,
+		struct sr_datafeed_analog *analog, void *info);
+
+/*--- hardware/dmm/vc96.c ---------------------------------------------------*/
+
+#define VC96_PACKET_SIZE 13
+
+struct vc96_info {
+	size_t ch_idx;
+	gboolean is_ac, is_dc, is_resistance, is_diode, is_ampere, is_volt;
+	gboolean is_ohm, is_micro, is_milli, is_kilo, is_mega, is_hfe;
+	gboolean is_unitless;
+};
+
+SR_PRIV gboolean sr_vc96_packet_valid(const uint8_t *buf);
+SR_PRIV int sr_vc96_parse(const uint8_t *buf, float *floatval,
 		struct sr_datafeed_analog *analog, void *info);
 
 /*--- hardware/lcr/es51919.c ------------------------------------------------*/
